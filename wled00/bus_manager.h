@@ -250,7 +250,91 @@ class BusDigital : public Bus {
   void * _busPtr = nullptr;
 };
 
+#ifdef TERRIBLE_HACK
+// How many boards do you have chained?
+const uint8_t TLC5974_count  = 1;
 
+const uint8_t data_pin = 13;
+const uint8_t clock_pin = 14;
+const uint8_t latch_pin = 5;
+
+#include "Adafruit_TLC5947.h"
+
+class BusPwm : public Bus {
+  private:
+    Adafruit_TLC5947 pwm;
+    uint8_t _data[5] = {255, 255, 255, 255, 255};
+
+  public:
+    BusPwm(BusConfig &bc) : Bus(bc.type, bc.start), pwm(TLC5974_count, clock_pin, data_pin, latch_pin) {
+      _valid = false;
+      reversed = bc.reversed;
+
+      // TODO: Is it worth allocating pins?
+
+      pwm.begin();
+
+      _valid = true;
+    }
+
+    void setPixelColor(uint16_t pix, uint32_t c) {
+      if (pix != 0 || !_valid) return; //only react to first pixel
+
+      _data[0] = c >> 16;
+      _data[1] = c >>  8;
+      _data[2] = c      ;
+      _data[3] = c >> 24;
+    }
+
+  
+  //does no index check
+  uint32_t getPixelColor(uint16_t pix) {
+    if (!_valid) return 0;
+    return ((_data[3] << 24) | (_data[0] << 16) | (_data[1] << 8) | (_data[2]));
+  }
+
+  void show() {
+    if (!_valid) return;
+
+    uint8_t r, g, b, w;
+
+    r = (_data[0] * _bri) / 255;
+    g = (_data[1] * _bri) / 255;
+    b = (_data[2] * _bri) / 255;
+    w = (_data[3] * _bri) / 255;
+
+    if (reversed) {
+      r = 255 - r;
+      g = 255 - g;
+      b = 255 - b;
+      w = 255 - w;
+    }
+
+    pwm.setLED(0, r, g, b);
+    pwm.setPWM(3, 4095 * w / 255);
+    pwm.write();
+  }
+
+  inline void setBrightness(uint8_t b) {
+    _bri = b;
+  }
+
+  uint8_t getPins(uint8_t* pinArray) {
+    if (!_valid) return 0;
+
+    pinArray[0] = SCK;
+    pinArray[1] = MOSI;
+    pinArray[2] = 5;
+    pinArray[3] = -1;
+
+    return 4;
+  }
+
+  bool isRgbw() {
+    return true;
+  }
+};
+#else
 class BusPwm : public Bus {
   public:
   BusPwm(BusConfig &bc) : Bus(bc.type, bc.start) {
@@ -372,7 +456,7 @@ class BusPwm : public Bus {
     #endif
   }
 };
-
+#endif
 
 class BusNetwork : public Bus {
   public:
